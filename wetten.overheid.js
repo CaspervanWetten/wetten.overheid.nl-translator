@@ -9,7 +9,7 @@
 	"inRepository": true,
 	"translatorType": 4,
 	"browserSupport": "gcsibv",
-	"lastUpdated": "2023-12-01 17:21:25"
+	"lastUpdated": "2023-12-20 15:33:44"
 }
 
 	/*
@@ -50,30 +50,56 @@ function scrape(respString, respObject, url) {
 	var newItem = new Zotero.Item("statute");
 	var parsed = stringToHtml(respString)
 	
-	var title = parsed.getElementsByTagName("h1")[0].textContent
-	if (title.match(/W?w?et?![boek]/)) {title = "de " + title}
-	if (title.match(/B?b?oek/)) {title = "het " + title}
-	Z.debug(title)
-	if (title.match(/Burgerlijk/)) { title = title.replace(/(.*)(\sBoek \d+)/, "$2 van $1");}
-	newItem.title = title
+	// Get the easy stuff
 	newItem.dateEnacted = url.match(/[0-9]{4}-[0-9]{2}-[0-9]{2}/)[0];
 	newItem.url = url.replace(/.{13}$/, '')
-	//If there is a short title, go and get it
-	var afkorting = parsed.querySelector("td[data-before='Afkortingen'], td[data-before='Afkorting']").textContent
-	if (afkorting != "Geen") { newItem.shortTitle = afkorting}
 
-	//Get the creator
-	// newItem.authority = respString.match(/Eerstverantwoordelijke\s*.*">([a-zA-Z\s]*)/)[1]
+	// The title can vary
+	var title = parsed.getElementsByTagName("h1")[0].textContent
+	// Statues ending in "wet" or in "book" shoudl have different definitive articles
+	if (title.match(/W?w?et$/)) {title = "de " + title}
+	if (title.match(/B?b?oek ?\d?$/)) {title = "het " + title}
+	// The "Burgerlijke wetboeken" have a specific phrasiing to them, this fixes that
+	if (title.match(/Burgerlijk/)) { title = title.replace(/(.*)(\sBoek \d+)/, "$2 van $1");}
+	newItem.title = title
+
+
+	//If there is a short title, go and get it
+	var shortTitles = parsed.querySelectorAll("td[data-before='Afkortingen'], td[data-before='Afkorting']")
+	if (shortTitles[0].textContent != "Geen") { 
+		if (shortTitles[0].textContent == "BW") {newItem.shortTitle = shortTitles[2].textContent}
+		else 									{newItem.shortTitle = shortTitles[0].textContent} //The "Burgerlijk Wetboeken" have the same initial short title (BW), but the third short title (like BW5) is the one we want
+	}	
+
+	//Get the code
+	newItem.code = parsed.querySelector("td[data-before='Identificatienummer']").textContent
+
+	//Get the law field as tags
+	let tagArray = []
+	tags = parsed.querySelectorAll("td[data-before='Rechtsgebied']")
+	if (tags.length == 0) {tags = parsed.querySelectorAll("td[data-before='Rechtsgebieden']")}
+	for (let tag of tags){
+		if (tag.textContent.includes('|')) {
+			for (tag of tag.textContent.split('|').map(tag => tag.trim())){
+				if (!tagArray.includes(tag)) {tagArray.push(tag)} 
+			}		
+		}
+		else {if (!tagArray.includes(tag)) {tagArray.push(tag)} }
+	}
+	newItem.tags = tagArray
 
 	//Get law-family
 	var li = parsed.getElementById("Wetsfamilie").nextElementSibling.getElementsByTagName("li")
-	var tags = []
+	var seeAlso = []
 	for (var i = 0; i < li.length; i++) {
 		if (li[i].textContent != parsed.getElementsByTagName("h1")[0].textContent) {
-			tags.push(li[i].textContent);
+			seeAlso.push(li[i].textContent);
 		}
 	}
-	newItem.tags = tags
+	newItem.seeAlso = seeAlso
+
+
+	//Finish the item
 	newItem.complete()
 }
 
@@ -94,42 +120,24 @@ var testCases = [
 				"nameOfAct": "Besluit kansspelen op afstand",
 				"creators": [],
 				"dateEnacted": "2022-07-15",
+				"code": "BWBR0044773",
 				"url": "https://wetten.overheid.nl/BWBR0044773/2022-07-15",
 				"attachments": [],
 				"tags": [
 					{
-						"tag": "Wet justitiële en strafvorderlijke gegevens"
+						"tag": "Bank- en effectenrecht, financiering"
 					},
 					{
-						"tag": "Wet op de kansspelen"
-					},
-					{
-						"tag": "Wet politiegegevens"
-					},
-					{
-						"tag": "Wet ter voorkoming van witwassen en financieren van terrorisme"
+						"tag": "Toezicht bank- en kredietwezen"
 					}
 				],
 				"notes": [],
-				"seeAlso": []
-			}
-		]
-	},
-	{
-		"type": "web",
-		"url": "https://wetten.overheid.nl/BWBR0001886/2022-10-01",
-		"items": [
-			{
-				"itemType": "statute",
-				"nameOfAct": "Auteurswet",
-				"creators": [],
-				"dateEnacted": "2022-10-01",
-				"shortTitle": "Aw",
-				"url": "https://wetten.overheid.nl/BWBR0001886/2022-10-01",
-				"attachments": [],
-				"tags": [],
-				"notes": [],
-				"seeAlso": []
+				"seeAlso": [
+					"Wet justitiële en strafvorderlijke gegevens",
+					"Wet op de kansspelen",
+					"Wet politiegegevens",
+					"Wet ter voorkoming van witwassen en financieren van terrorisme"
+				]
 			}
 		]
 	},
@@ -139,13 +147,24 @@ var testCases = [
 		"items": [
 			{
 				"itemType": "statute",
-				"nameOfAct": "Burgerlijk Wetboek Boek 1",
+				"nameOfAct": "Boek 1 van het Burgerlijk Wetboek",
 				"creators": [],
 				"dateEnacted": "2023-07-01",
-				"shortTitle": "BW",
+				"code": "BWBR0002656",
+				"shortTitle": "BW1",
 				"url": "https://wetten.overheid.nl/BWBR0002656/2023-07-01",
 				"attachments": [],
-				"tags": [],
+				"tags": [
+					{
+						"tag": "Familierecht"
+					},
+					{
+						"tag": "Personen- en familierecht"
+					},
+					{
+						"tag": "Personenrecht"
+					}
+				],
 				"notes": [],
 				"seeAlso": []
 			}
@@ -157,49 +176,21 @@ var testCases = [
 		"items": [
 			{
 				"itemType": "statute",
-				"nameOfAct": "Grondwet",
+				"nameOfAct": "de Grondwet",
 				"creators": [],
 				"dateEnacted": "2023-02-22",
+				"code": "BWBR0001840",
 				"shortTitle": "GW",
 				"url": "https://wetten.overheid.nl/BWBR0001840/2023-02-22",
 				"attachments": [],
-				"tags": [],
-				"notes": [],
-				"seeAlso": []
-			}
-		]
-	},
-	{
-		"type": "web",
-		"url": "https://wetten.overheid.nl/BWBR0005537/2023-08-01/0#Hoofdstuk8_Titeldeel8.1_Afdeling8.1.3_Artikel8:13a",
-		"items": [
-			{
-				"itemType": "statute",
-				"nameOfAct": "Algemene wet bestuursrecht",
-				"creators": [],
-				"dateEnacted": "2023-08-01",
-				"shortTitle": "Awb",
-				"url": "https://wetten.overheid.nl/BWBR0005537/2023-08-01",
-				"attachments": [],
-				"tags": [],
-				"notes": [],
-				"seeAlso": []
-			}
-		]
-	},
-	{
-		"type": "web",
-		"url": "https://wetten.overheid.nl/BWBR0001903/2023-10-01/0#BoekEerste_TiteldeelI_AfdelingVierde_Artikel12l",
-		"items": [
-			{
-				"itemType": "statute",
-				"nameOfAct": "het Wetboek van Strafvordering",
-				"creators": [],
-				"dateEnacted": "2023-10-01",
-				"shortTitle": "Sv",
-				"url": "https://wetten.overheid.nl/BWBR0001903/2023-10-01",
-				"attachments": [],
-				"tags": [],
+				"tags": [
+					{
+						"tag": "Staats- en bestuursrecht"
+					},
+					{
+						"tag": "Staatsrecht"
+					}
+				],
 				"notes": [],
 				"seeAlso": []
 			}
@@ -214,10 +205,69 @@ var testCases = [
 				"nameOfAct": "Boek 5 van het Burgerlijk Wetboek",
 				"creators": [],
 				"dateEnacted": "2023-05-01",
-				"shortTitle": "BW",
+				"code": "BWBR0005288",
+				"shortTitle": "BW5",
 				"url": "https://wetten.overheid.nl/BWBR0005288/2023-05-01",
 				"attachments": [],
-				"tags": [],
+				"tags": [
+					{
+						"tag": "Eigendomsrecht"
+					},
+					{
+						"tag": "Goederenrecht"
+					}
+				],
+				"notes": [],
+				"seeAlso": []
+			}
+		]
+	},
+	{
+		"type": "web",
+		"url": "https://wetten.overheid.nl/BWBR0032203/2022-03-02/",
+		"items": [
+			{
+				"itemType": "statute",
+				"nameOfAct": "Aanbestedingswet 2012",
+				"creators": [],
+				"dateEnacted": "2022-03-02",
+				"code": "BWBR0032203",
+				"shortTitle": "AanbW 2012",
+				"url": "https://wetten.overheid.nl/BWBR0032203/2022-03-02",
+				"attachments": [],
+				"tags": [
+					{
+						"tag": "Contracten, schade en aansprakelijkheid"
+					},
+					{
+						"tag": "Verbintenissenrecht"
+					}
+				],
+				"notes": [],
+				"seeAlso": []
+			}
+		]
+	},
+	{
+		"type": "web",
+		"url": "https://wetten.overheid.nl/BWBR0032898/2019-04-18/",
+		"items": [
+			{
+				"itemType": "statute",
+				"nameOfAct": "Aanbestedingswet op defensie- en veiligheidsgebied",
+				"creators": [],
+				"dateEnacted": "2019-04-18",
+				"code": "BWBR0032898",
+				"url": "https://wetten.overheid.nl/BWBR0032898/2019-04-18",
+				"attachments": [],
+				"tags": [
+					{
+						"tag": "Contracten, schade en aansprakelijkheid"
+					},
+					{
+						"tag": "Verbintenissenrecht"
+					}
+				],
 				"notes": [],
 				"seeAlso": []
 			}
